@@ -35,19 +35,16 @@
       <div class="section-label">其他可用源</div>
 
       <div class="search-tools" v-if="store.book">
-        <label class="tool-item">
+        <label class="tool-item compact">
           <span class="tool-label">并发</span>
-          <div class="tool-control tool-control-range">
-            <input
-              type="range"
-              min="4"
-              max="128"
-              step="4"
-              v-model.number="concurrentCount"
-              :disabled="searching"
-            >
-            <span class="tool-value">{{ concurrentCount }}</span>
-          </div>
+          <input
+            type="number"
+            min="4"
+            max="128"
+            step="1"
+            v-model.number="concurrentCount"
+            :disabled="searching"
+          >
         </label>
         <label class="tool-item compact">
           <span class="tool-label">扫描上限</span>
@@ -344,6 +341,7 @@ onUnmounted(() => {
 })
 
 watch([concurrentCount, searchSize], () => {
+  normalizeSearchControls()
   persistSearchPref()
 })
 
@@ -398,6 +396,7 @@ watch(
 
 function startSearch(forceRefresh = false) {
   if (!store.book) return
+  normalizeSearchControls()
   closeAvailableSourceSSE()
   persistSearchPref()
 
@@ -660,6 +659,7 @@ function restoreSearchPref() {
     if (typeof parsed.searchSize === 'number') {
       searchSize.value = clampNumber(parsed.searchSize, 20, 1000)
     }
+    normalizeSearchControls()
   } catch {
     // ignore bad data
   }
@@ -891,6 +891,11 @@ function releaseLockIfOwned() {
 function clampNumber(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
 }
+
+function normalizeSearchControls() {
+  concurrentCount.value = Math.round(clampNumber(concurrentCount.value, 4, 128))
+  searchSize.value = Math.round(clampNumber(searchSize.value, 20, 1000))
+}
 </script>
 
 <style scoped>
@@ -944,7 +949,7 @@ function clampNumber(value: number, min: number, max: number) {
   backdrop-filter: blur(12px);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(140px, 0.8fr) auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   align-items: center;
 }
@@ -1013,6 +1018,7 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 .tool-actions {
+  grid-column: 1 / -1;
   display: flex;
   align-items: stretch;
   gap: 8px;
