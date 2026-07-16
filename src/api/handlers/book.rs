@@ -1426,6 +1426,7 @@ pub async fn pin_book_chapter_content(
             state
                 .book_service
                 .get_shelf_book_by_chapter(&user_ns, &chapter_url)
+                .await
                 .ok()
                 .flatten()
                 .map(|b| b.book_url)
