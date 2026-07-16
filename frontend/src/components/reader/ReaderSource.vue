@@ -738,7 +738,6 @@ function acquireSearchLock() {
 }
 
 function startHeartbeat() {
-  })
   stopHeartbeat()
   heartbeatTimer = window.setInterval(() => {
     if (!isLeader.value || !lockStorageKey.value) return
