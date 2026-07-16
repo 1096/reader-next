@@ -1086,6 +1086,12 @@
       v-model="showBookInfo"
       :book="bookInfoBook"
     />
+
+    <div class="chapter-pin-row" v-if="store.book && store.currentChapter">
+      <button class="chapter-pin-btn" :disabled="pinningChapter" @click.stop="pinCurrentChapter">
+        {{ pinningChapter ? '固化中...' : '固化本章到本地' }}
+      </button>
+    </div>
   </div>
 </template>
 
@@ -1096,11 +1102,6 @@ import { useReaderStore, fontPresets } from '../stores/reader'
 import { useAiBookStore } from '../stores/aiBook'
 import { useAppStore } from '../stores/app'
 import { getBookInfo, pinBookChapterContent } from '../api/bookshelf'
-          <div class="chapter-pin-row" v-if="store.book && store.currentChapter">
-            <button class="chapter-pin-btn" :disabled="pinningChapter" @click.stop="pinCurrentChapter">
-              {{ pinningChapter ? '固化中...' : '固化本章到本地' }}
-            </button>
-          </div>
 import { getAiBookMemory } from '../api/ai/book'
 import {
   getChapterSummary,
