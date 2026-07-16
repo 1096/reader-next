@@ -26,7 +26,7 @@
           />
           <ReadSettings v-else-if="store.activePanel === 'settings'" />
           <ReaderBookshelf v-else-if="store.activePanel === 'bookshelf'" />
-          <ReaderSource v-if="store.activePanel === 'source'" />
+          <ReaderSource v-else-if="store.activePanel === 'source'" />
           <ReplaceRuleManager v-else-if="store.activePanel === 'rule'" />
           <CacheManager v-else-if="store.activePanel === 'cache'" />
         </div>
