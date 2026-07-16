@@ -36,19 +36,21 @@
 
       <div class="search-tools" v-if="store.book">
         <label class="tool-item">
-          并发
-          <input
-            type="range"
-            min="4"
-            max="128"
-            step="4"
-            v-model.number="concurrentCount"
-            :disabled="searching"
-          >
-          <span>{{ concurrentCount }}</span>
+          <span class="tool-label">并发</span>
+          <div class="tool-control tool-control-range">
+            <input
+              type="range"
+              min="4"
+              max="128"
+              step="4"
+              v-model.number="concurrentCount"
+              :disabled="searching"
+            >
+            <span class="tool-value">{{ concurrentCount }}</span>
+          </div>
         </label>
         <label class="tool-item compact">
-          扫描上限
+          <span class="tool-label">扫描上限</span>
           <input
             type="number"
             min="20"
@@ -58,7 +60,32 @@
             :disabled="searching"
           >
         </label>
-        <button class="refresh-btn" :disabled="searching" @click="startSearch(true)">重新搜索</button>
+        <div class="tool-actions">
+          <button class="refresh-btn" :disabled="searching" @click="startSearch(true)">重新搜索</button>
+          <button v-if="searching || loadingMore" class="cancel-btn" type="button" @click="cancelSearch">取消搜索</button>
+        </div>
+      </div>
+
+      <div v-if="store.book" class="search-state-banner" :class="{
+        running: searching || loadingMore,
+        idle: !searching && !loadingMore && hasMoreSources,
+        done: !searching && !loadingMore && !hasMoreSources,
+      }">
+        <span class="search-state-dot"></span>
+        <div class="search-state-text">
+          <div class="search-state-title">
+            {{ searching || loadingMore
+              ? (isFollower ? '后台搜索中' : '正在后台搜索书源')
+              : (hasMoreSources ? '搜索已暂停' : '搜索已完成') }}
+          </div>
+          <div class="search-state-subtitle">
+            {{ searching || loadingMore
+              ? '关闭书源面板不会中断搜索，返回后可继续查看结果。'
+              : (hasMoreSources
+                ? '当前结果可继续追加，点击加载更多或重新搜索。'
+                : '已完成全部匹配，可直接切换结果书源。') }}
+          </div>
+        </div>
       </div>
 
       <div v-if="showProgress" class="progress-wrap">
@@ -195,6 +222,7 @@ type SearchChannelMessage =
   | { type: 'chunk'; tabId: string; payload: AvailableSourceSSEPayload }
   | { type: 'progress'; tabId: string; payload: AvailableSourceSSEPayload }
   | { type: 'end'; tabId: string; payload: AvailableSourceSSEPayload }
+  | { type: 'cancel'; tabId: string }
   | { type: 'error'; tabId: string }
   | { type: 'needSnapshot'; tabId: string }
   | { type: 'request-load-more'; tabId: string }
@@ -267,6 +295,8 @@ const currentSource = computed(() => {
   }
 })
 
+const isPanelActive = computed(() => store.activePanel === 'source')
+
 function normalizeText(value?: string) {
   return (value || '')
     .replace(/\s+/g, '')
@@ -300,12 +330,6 @@ const preparedResults = computed<CandidateItem[]>(() => {
 
 onMounted(() => {
   restoreSearchPref()
-  initializeChannel()
-  startFollowerMonitor()
-  const restored = restorePersistedState()
-  if (!restored) {
-    startSearch()
-  }
 })
 
 onUnmounted(() => {
@@ -324,15 +348,50 @@ watch([concurrentCount, searchSize], () => {
 })
 
 watch(
+  () => store.activePanel,
+  (panel) => {
+    if (panel !== 'source') return
+    initializeChannel()
+    startFollowerMonitor()
+    const restored = restorePersistedState()
+    if (!restored && !searching.value && !results.value.length) {
+      startSearch()
+    }
+  },
+  { immediate: true },
+)
+
+watch(
   () => [store.book?.name, store.book?.author],
   () => {
     closeAvailableSourceSSE()
     stopHeartbeat()
     releaseLockIfOwned()
-    initializeChannel()
-    const restored = restorePersistedState()
-    if (!restored) {
-      startSearch()
+    stopFollowerMonitor()
+    if (channel) {
+      channel.close()
+      channel = null
+    }
+    isLeader.value = false
+    isFollower.value = false
+    searching.value = false
+    loadingMore.value = false
+
+    if (isPanelActive.value) {
+      initializeChannel()
+      startFollowerMonitor()
+      const restored = restorePersistedState()
+      if (!restored) {
+        startSearch()
+      }
+    } else {
+      results.value = []
+      lastIndex.value = -1
+      hasMoreSources.value = true
+      selectedCandidate.value = null
+      candidatePreview.value = null
+      progress.value = { processed: 0, total: 0, matched: 0 }
+      clearPersistedState()
     }
   },
 )
@@ -368,6 +427,25 @@ function startSearch(forceRefresh = false) {
     noteLeaderSignal()
     broadcast({ type: 'needSnapshot', tabId })
   }
+}
+
+function cancelSearch() {
+  if (!searching.value && !loadingMore.value && !availableSourceSSE) return
+
+  closeAvailableSourceSSE()
+  stopHeartbeat()
+  stopFollowerMonitor()
+  releaseLockIfOwned()
+
+  if (channel) {
+    broadcast({ type: 'cancel', tabId })
+  }
+
+  isLeader.value = false
+  isFollower.value = false
+  searching.value = false
+  loadingMore.value = false
+  persistSearchState()
 }
 
 function mergeCandidates(candidates: SearchBook[]) {
@@ -699,6 +777,19 @@ function initializeChannel() {
       return
     }
 
+    if (msg.type === 'cancel') {
+      closeAvailableSourceSSE()
+      stopHeartbeat()
+      stopFollowerMonitor()
+      releaseLockIfOwned()
+      isLeader.value = false
+      isFollower.value = false
+      searching.value = false
+      loadingMore.value = false
+      persistSearchState()
+      return
+    }
+
     if (msg.type === 'snapshot' || msg.type === 'chunk' || msg.type === 'progress' || msg.type === 'end') {
       applyAvailableSourcePayload(msg.payload)
       if (msg.type === 'end') {
@@ -815,7 +906,12 @@ function clampNumber(value: number, min: number, max: number) {
   align-items: center;
   justify-content: space-between;
   padding: 16px 20px;
-  border-bottom: 1px solid rgba(0,0,0,0.06);
+  margin: 12px 12px 8px;
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
   flex-shrink: 0;
 }
 
@@ -833,35 +929,56 @@ function clampNumber(value: number, min: number, max: number) {
 .source-list {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 4px 0 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 .search-tools {
-  margin: 6px 16px 8px;
+  margin: 0 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid rgba(0,0,0,0.08);
-  background: rgba(0, 0, 0, 0.03);
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 140px) auto;
-  gap: 10px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(140px, 0.8fr) auto;
+  gap: 12px;
   align-items: center;
 }
 
 .tool-item {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: stretch;
   gap: 8px;
   font-size: 12px;
   opacity: 0.78;
 }
 
-.tool-item input[type='range'] {
+.tool-label {
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.72;
+}
+
+.tool-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.tool-control-range input[type='range'] {
   flex: 1;
+  min-width: 0;
 }
 
 .tool-item.compact input {
-  width: 88px;
+  width: 100%;
+  box-sizing: border-box;
   border: 1px solid rgba(0,0,0,0.15);
   background: transparent;
   border-radius: 8px;
@@ -870,8 +987,16 @@ function clampNumber(value: number, min: number, max: number) {
   color: inherit;
 }
 
+.tool-value {
+  min-width: 34px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.72;
+}
+
 .refresh-btn {
-  height: 30px;
+  height: 100%;
+  min-height: 28px;
   border-radius: 999px;
   border: 1px solid var(--color-primary, #c97f3a);
   background: rgba(201, 127, 58, 0.08);
@@ -879,6 +1004,7 @@ function clampNumber(value: number, min: number, max: number) {
   cursor: pointer;
   padding: 0 12px;
   font-size: 12px;
+  white-space: nowrap;
 }
 
 .refresh-btn:disabled {
@@ -886,12 +1012,44 @@ function clampNumber(value: number, min: number, max: number) {
   cursor: wait;
 }
 
+.tool-actions {
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.cancel-btn {
+  min-height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,0,0,0.12);
+  background: rgba(0,0,0,0.03);
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cancel-btn:hover:not(:disabled) {
+  border-color: rgba(0,0,0,0.2);
+  background: rgba(0,0,0,0.06);
+}
+
+.cancel-btn:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
 .progress-wrap {
-  margin: 6px 16px 10px;
+  margin: 0 12px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 16px;
   border: 1px solid rgba(201, 127, 58, 0.18);
-  background: rgba(201, 127, 58, 0.08);
+  background: rgba(201, 127, 58, 0.1);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 }
 
 .progress-head {
@@ -921,11 +1079,13 @@ function clampNumber(value: number, min: number, max: number) {
 .book-brief {
   display: flex;
   gap: 12px;
-  margin: 8px 16px 14px;
+  margin: 0 12px;
   padding: 12px;
-  border-radius: 14px;
+  border-radius: 16px;
   background: rgba(201, 127, 58, 0.08);
   border: 1px solid rgba(201, 127, 58, 0.14);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 }
 
 .book-brief-cover {
@@ -984,28 +1144,42 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 .section-label {
-  padding: 12px 20px 4px;
+  margin: 2px 12px 0;
+  padding: 9px 12px;
   font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  opacity: 0.4;
-  font-weight: 600;
+  letter-spacing: 0.08em;
+  opacity: 0.48;
+  font-weight: 700;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,0.06);
+  background: rgba(0, 0, 0, 0.025);
 }
 
 .source-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  border-bottom: 1px solid rgba(0,0,0,0.02);
+  margin: 0 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(0,0,0,0.07);
+  background: rgba(255, 255, 255, 0.22);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.03);
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.2s, box-shadow 0.2s, border-color 0.2s;
 }
 
-.source-item:hover { background: rgba(0,0,0,0.03); }
-.source-item.current { background: rgba(201, 127, 58, 0.04); cursor: default; }
+.source-item:hover {
+  background: rgba(255, 255, 255, 0.34);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.05);
+}
+.source-item.current { background: rgba(201, 127, 58, 0.06); cursor: default; }
 .source-item.selected {
   background: rgba(201, 127, 58, 0.08);
+  border-color: rgba(201, 127, 58, 0.22);
   box-shadow: inset 3px 0 0 var(--color-primary, #c97f3a);
 }
 
@@ -1085,11 +1259,13 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 .compare-panel {
-  margin: 8px 16px 18px;
+  margin: 0 12px;
   padding: 14px;
   border-radius: 16px;
   background: rgba(201, 127, 58, 0.08);
   border: 1px solid rgba(201, 127, 58, 0.14);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.04);
 }
 
 .compare-header {
@@ -1190,7 +1366,7 @@ function clampNumber(value: number, min: number, max: number) {
 }
 
 .load-more-wrap {
-  padding: 16px 20px 24px;
+  padding: 4px 12px 8px;
   display: flex;
   justify-content: center;
 }
@@ -1247,13 +1423,100 @@ function clampNumber(value: number, min: number, max: number) {
 .switch-overlay p { margin-top: 16px; font-size: 14px; opacity: 0.8; }
 
 @media (max-width: 640px) {
+  .source-header {
+    margin: 10px 10px 6px;
+    padding: 14px 16px;
+  }
+
   .search-tools {
-    margin: 6px 12px 8px;
+    margin: 0 10px;
     grid-template-columns: 1fr;
   }
 
+  .tool-item {
+    gap: 6px;
+  }
+
+  .tool-control {
+    gap: 10px;
+  }
+
+  .refresh-btn {
+    width: 100%;
+  }
+
+  .tool-actions {
+    justify-content: stretch;
+  }
+
+  .tool-actions > button {
+    flex: 1 1 0;
+  }
+
+  .search-state-banner {
+    margin: 0 12px;
+    padding: 10px 12px;
+    border-radius: 16px;
+    border: 1px solid rgba(0,0,0,0.08);
+    background: rgba(0, 0, 0, 0.025);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .search-state-banner.running {
+    border-color: rgba(201, 127, 58, 0.2);
+    background: rgba(201, 127, 58, 0.08);
+  }
+
+  .search-state-banner.done {
+    border-color: rgba(82, 196, 26, 0.18);
+    background: rgba(82, 196, 26, 0.08);
+  }
+
+  .search-state-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-top: 5px;
+    flex-shrink: 0;
+    background: rgba(0,0,0,0.2);
+  }
+
+  .search-state-banner.running .search-state-dot {
+    background: var(--color-primary, #c97f3a);
+    box-shadow: 0 0 0 4px rgba(201, 127, 58, 0.12);
+  }
+
+  .search-state-banner.done .search-state-dot {
+    background: #3f8f16;
+    box-shadow: 0 0 0 4px rgba(82, 196, 26, 0.12);
+  }
+
+  .search-state-text {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .search-state-title {
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .search-state-subtitle {
+    font-size: 11px;
+    line-height: 1.45;
+    opacity: 0.72;
+  }
+
+  .search-state-banner {
+    margin: 0 10px;
+  }
+
   .progress-wrap {
-    margin: 6px 12px 10px;
+    margin: 0 10px;
   }
 
   .progress-head {
@@ -1271,7 +1534,7 @@ function clampNumber(value: number, min: number, max: number) {
   }
 
   .compare-panel {
-    margin: 8px 12px 16px;
+    margin: 0 10px;
     padding: 12px;
   }
 

@@ -18,7 +18,7 @@
         <div v-if="store.activePanel" class="reader-overlay" @click="store.closePanel()"></div>
       </Transition>
       <Transition name="slide-left">
-        <div v-if="store.activePanel" class="reader-drawer" :style="{ background: chromeTheme.popup }">
+        <div v-show="store.activePanel" class="reader-drawer" :style="{ background: chromeTheme.popup }">
           <ReaderCatalog
             v-if="store.activePanel === 'catalog' || store.activePanel === 'bookmark'"
             :initial-tab="store.activePanel === 'bookmark' ? 'bookmarks' : 'chapters'"
@@ -26,7 +26,7 @@
           />
           <ReadSettings v-else-if="store.activePanel === 'settings'" />
           <ReaderBookshelf v-else-if="store.activePanel === 'bookshelf'" />
-          <ReaderSource v-else-if="store.activePanel === 'source'" />
+          <ReaderSource v-show="store.activePanel === 'source'" />
           <ReplaceRuleManager v-else-if="store.activePanel === 'rule'" />
           <CacheManager v-else-if="store.activePanel === 'cache'" />
         </div>
@@ -39,6 +39,7 @@
       @goHome="goHome"
       @scrollTop="scrollToTop"
       @scrollBottom="scrollToBottom"
+      @pinChapter="pinCurrentChapter"
     />
     <ReaderToolbar
       v-if="!isMobile"
@@ -1087,11 +1088,6 @@
       :book="bookInfoBook"
     />
 
-    <div class="chapter-pin-row" v-if="store.book && store.currentChapter">
-      <button class="chapter-pin-btn" :disabled="pinningChapter" @click.stop="pinCurrentChapter">
-        {{ pinningChapter ? '固化中...' : '固化本章到本地' }}
-      </button>
-    </div>
   </div>
 </template>
 

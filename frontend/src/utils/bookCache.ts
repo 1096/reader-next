@@ -35,6 +35,7 @@ export async function cacheBookToBrowser(params: {
     const content = await getBookContent({
       chapterUrl: chapter.url,
       bookSourceUrl: params.book.origin,
+      index: chapter.index,
     })
     await setBrowserCachedChapter({
       bookUrl: params.book.bookUrl,

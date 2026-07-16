@@ -109,6 +109,7 @@ describe('reader local txt chapters', () => {
     expect(getBookContent).toHaveBeenCalledWith({
       chapterUrl: 'local-txt:abc123#0',
       bookSourceUrl: 'local-txt',
+      index: 0,
       refresh: 0,
     })
   })
@@ -205,6 +206,7 @@ describe('reader local txt chapters', () => {
     expect(getBookContent).toHaveBeenCalledWith({
       chapterUrl: 'chapter-5',
       bookSourceUrl: 'source-1',
+      index: 4,
       refresh: 0,
     })
     expect(restored).toBe(true)
@@ -259,6 +261,7 @@ describe('reader local txt chapters', () => {
     expect(getBookContent).toHaveBeenCalledWith({
       chapterUrl: 'chapter-1',
       bookSourceUrl: 'source-1',
+      index: 0,
       refresh: 0,
     })
   })
