@@ -470,6 +470,7 @@ function openAvailableSourceSSE(mode: AvailableSourceMode) {
     const payload = parseAvailableSourcePayload(event as MessageEvent)
     applyAvailableSourcePayload(payload)
     broadcast({ type: 'progress', tabId, payload: payload || {} })
+  })
   }
 
   stream.addEventListener('end', (event) => {
