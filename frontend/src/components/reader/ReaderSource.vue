@@ -223,7 +223,6 @@ const lastIndex = ref(-1)
 const hasMoreSources = ref(true)
 const selectedCandidate = ref<CandidateItem | null>(null)
 const candidatePreview = ref<Book | null>(null)
-const listRef = ref<HTMLElement | null>(null)
 const progress = ref<SearchProgress>({ processed: 0, total: 0, matched: 0 })
 const tabId = `tab-${Math.random().toString(36).slice(2)}-${Date.now()}`
 const isLeader = ref(false)
