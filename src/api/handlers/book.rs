@@ -26,8 +26,10 @@ use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::convert::Infallible;
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 
 const DEFAULT_AVAILABLE_RESULT_LIMIT: usize = 20;
@@ -1889,18 +1891,28 @@ pub async fn set_book_source(
         }
     }
 
-    match state
-        .book_service
-        .get_book_info(&user_ns, &new_source, &new_book_url)
-        .await
+    match timeout(
+        Duration::from_secs(12),
+        state
+            .book_service
+            .get_book_info(&user_ns, &new_source, &new_book_url),
+    )
+    .await
     {
-        Ok(info) => merge_book(&mut updated, info),
-        Err(err) => {
+        Ok(Ok(info)) => merge_book(&mut updated, info),
+        Ok(Err(err)) => {
             tracing::warn!(
                 "setBookSource: failed to refresh metadata for {} via {}: {:?}",
                 new_book_url,
                 new_source.book_source_url,
                 err
+            );
+        }
+        Err(_) => {
+            tracing::warn!(
+                "setBookSource: metadata refresh timeout for {} via {}",
+                new_book_url,
+                new_source.book_source_url,
             );
         }
     }
