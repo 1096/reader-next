@@ -2712,25 +2712,26 @@ function setSpeechTimer(minutes: number) {
   ttsPanelDismissed.value = false
   showTTSPanel.value = true
 }
-async function openInfo() {
 
-  async function pinCurrentChapter() {
-    if (!store.book || !store.currentChapter || pinningChapter.value) return
-    pinningChapter.value = true
-    try {
-      const result = await pinBookChapterContent({
-        bookUrl: store.book.bookUrl,
-        chapterUrl: store.currentChapter.url,
-        bookSourceUrl: store.book.origin,
-        index: store.currentIndex,
-      })
-      appStore.showToast(`已固化当前章节，约 ${Math.max(1, Math.round(result.size / 1024))} KB`, 'success')
-    } catch (error) {
-      appStore.showToast((error as Error).message || '固化章节失败', 'error')
-    } finally {
-      pinningChapter.value = false
-    }
+async function pinCurrentChapter() {
+  if (!store.book || !store.currentChapter || pinningChapter.value) return
+  pinningChapter.value = true
+  try {
+    const result = await pinBookChapterContent({
+      bookUrl: store.book.bookUrl,
+      chapterUrl: store.currentChapter.url,
+      bookSourceUrl: store.book.origin,
+      index: store.currentIndex,
+    })
+    appStore.showToast(`已固化当前章节，约 ${Math.max(1, Math.round(result.size / 1024))} KB`, 'success')
+  } catch (error) {
+    appStore.showToast((error as Error).message || '固化章节失败', 'error')
+  } finally {
+    pinningChapter.value = false
   }
+}
+
+async function openInfo() {
   if (!store.book) return
   showBookInfo.value = true
   bookInfoBook.value = {
