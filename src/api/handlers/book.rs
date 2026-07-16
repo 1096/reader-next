@@ -1419,19 +1419,18 @@ pub async fn pin_book_chapter_content(
         .chapter_url
         .clone()
         .ok_or_else(|| AppError::BadRequest("chapterUrl required".to_string()))?;
-    let book_url = req
-        .book_url
-        .clone()
-        .or_else(|| {
-            state
-                .book_service
-                .get_shelf_book_by_chapter(&user_ns, &chapter_url)
-                .await
-                .ok()
-                .flatten()
-                .map(|b| b.book_url)
-        })
-        .unwrap_or_else(|| chapter_url.clone());
+    let book_url = if let Some(book_url) = req.book_url.clone() {
+        book_url
+    } else {
+        state
+            .book_service
+            .get_shelf_book_by_chapter(&user_ns, &chapter_url)
+            .await
+            .ok()
+            .flatten()
+            .map(|b| b.book_url)
+            .unwrap_or_else(|| chapter_url.clone())
+    };
 
     let source = resolve_book_source(
         &state,
